@@ -5,7 +5,10 @@
 
     Changelog:
 
-        * v1r48; [Henrik Norin, 25.09.17] Only aggregate stdout & stderr flush during execution. Expanded log policies. Added execution start time.
+        * v1r51; [Henrik Norin, 25.10.28] Added support for updating job compute metrics.
+        * v1r50; [Henrik Norin, 25.10.09] Support redirecting stdout & stderr to different log policies.
+        * v1r49; [Henrik Norin, 25.09.30] Added task preview/proxy file reporting.
+        * v1r48; [Henrik Norin, 25.09.17] Only aggregate stdout & stderr flush during execution. Expanded log policies. Added execution start time. Support single task progress updates.
         * v1r48; [Henrik Norin, 25.09.10] Dropped Python 2 support. Improved stderr support and logging. Utility for scanning finished frames.
         * v1r47; [Henrik Norin, 25.08.18] Added str_file_size helper util.
         * v1r46; [Henrik Norin, 25.04.06] Fix bug where paths on the form volume=<id>/.. did not convert to the correct volume native path.
@@ -76,7 +79,7 @@ import queue  # Python 3
 #)
 
 class Common(object):
-    __revision__ = 49
+    __revision__ = 51
 
     OS_LINUX = "linux"
     OS_MAC = "mac"
@@ -85,9 +88,11 @@ class Common(object):
 
     OUTPUT_METADATA_FILENAME = ".accsyn-compute-metadata.json"
 
-    LOG_POLICY_PUBLIC = "public"
-    LOG_POLICY_SERVICE = "service"
     LOG_POLICY_MUTE = "mute"
+    LOG_POLICY_PUBLIC_STDOUT = "public_stdout"
+    LOG_POLICY_PUBLIC_STDERR = "public_stderr"
+    LOG_POLICY_SERVICE_STDOUT = "service_stdout"
+    LOG_POLICY_SERVICE_STDERR = "service_stderr"
     
     _dev = False
     _debug = False
@@ -239,14 +244,19 @@ class Common(object):
             return s
 
     @staticmethod
-    def log(s, end=None, with_date=True, aggregated_flush=False):
+    def log(s, end=None, append_prefix=False, with_date=True, aggregated_flush=False, accsyn=True):
         """Log to public log @ stdout"""
         try:
-            date_part = f'({datetime.datetime.now()}) ' if with_date else ''
+            date_part = f"({datetime.datetime.now()}) " if with_date else ''
+            prefix = "[INFO]" if append_prefix else ""
+            if accsyn:
+                prefix = f"{prefix}{'(accsyn)' if accsyn else ''}"
+            if 0<len(prefix):
+                prefix += " "
             if end is not None:
-                print(f"!{date_part}{s}", end=end)
+                print(f"!{date_part}{prefix}{s}", end=end)
             else:
-                print(f"!{date_part}{s}")
+                print(f"!{date_part}{prefix}{s}")
             if not aggregated_flush or time.time() - Common._last_stdout_flush > 2: # Flush every 2 seconds
                 Common._last_stdout_flush = time.time()
                 sys.stdout.flush()
@@ -254,14 +264,17 @@ class Common(object):
             Common.warning(str(e))
  
     @staticmethod
-    def log_stderr(s, end=None, with_date=True, aggregated_flush=False):
+    def log_stderr(s, append_prefix=True, end=None, with_date=True, aggregated_flush=False, accsyn=True):
         """ Log to public log @ stderr """
         try:
-            date_part = f'({datetime.datetime.now()}) ' if with_date else ''
+            date_part = f"({datetime.datetime.now()}) " if with_date else ''
+            prefix = ""
+            if append_prefix:
+                prefix = f"[ERROR] {'(accsyn) ' if accsyn else ''}"
             if end is not None:
-                print(f"!{date_part}{s}", file=sys.stderr, end=end)
+                print(f"!{date_part}{prefix}{s}", file=sys.stderr, end=end)
             else:
-                print(f"!{date_part}{s}", file=sys.stderr)
+                print(f"!{date_part}{prefix}{s}", file=sys.stderr)
             if not aggregated_flush or time.time() - Common._last_stderr_flush > 2: # Flush every 2 seconds
                 Common._last_stderr_flush = time.time()
                 sys.stderr.flush()
@@ -269,14 +282,17 @@ class Common(object):
             Common.warning(str(e))
  
     @staticmethod
-    def info(s, end=None, with_date=True, aggregated_flush=False):
+    def info(s, append_prefix=True, end=None, with_date=True, aggregated_flush=False, accsyn=True):
         """ Log to service log"""
         try:
-            date_part = f'({datetime.datetime.now()}) ' if with_date else ''
+            date_part = f"({datetime.datetime.now()}) " if with_date else ''
+            prefix = ""
+            if append_prefix:
+                prefix = f"[INFO] {'(accsyn) ' if accsyn else ''}"
             if end is not None:
-                print(f"{date_part}[INFO] [ACCSYN] {s}", end=end)
+                print(f"{date_part}{prefix}{s}", end=end)
             else:
-                print(f"{date_part}[INFO] [ACCSYN] {s}")
+                print(f"{date_part}{prefix}{s}")
             if not aggregated_flush or time.time() - Common._last_stdout_flush > 2: # Flush every 2 seconds
                 Common._last_stdout_flush = time.time()
                 sys.stdout.flush()
@@ -284,14 +300,17 @@ class Common(object):
             Common.warning(str(e))
 
     @staticmethod
-    def warning(s, append_prefix=True, end=None, with_date=True, aggregated_flush=False):
+    def warning(s, append_prefix=True, end=None, with_date=True, aggregated_flush=False, accsyn=True):
         """ Warn to service log"""
         try:
-            date_part = f'({datetime.datetime.now()})' if with_date else ''
+            date_part = f"({datetime.datetime.now()})" if with_date else ""
+            prefix = ""
+            if append_prefix:
+                prefix = f"[WARNING] {'(accsyn) ' if accsyn else ''}"
             if end is not None:
-                print(f"{date_part}{'[WARNING] [ACCSYN] ' if append_prefix else ''}{s}", file=sys.stderr, end=end)
+                print(f"{date_part}{prefix}{s}", file=sys.stderr, end=end)
             else:
-                print(f"{date_part}{'[WARNING] [ACCSYN] ' if append_prefix else ''}{s}", file=sys.stderr)
+                print(f"{date_part}{prefix}{s}", file=sys.stderr)
             if not aggregated_flush or time.time() - Common._last_stderr_flush > 2: # Flush every 2 seconds
                 Common._last_stderr_flush = time.time()
                 sys.stderr.flush()
@@ -598,8 +617,8 @@ class Common(object):
         return False
 
     def log_policy(self, text, stderr=False):
-        """ Return one of the LOG_POLICY_PUBLIC, LOG_POLICY_SERVICE, LOG_POLICY_MUTE depending if *text* should be printed to the console. To be overridden by engine. """
-        return Common.LOG_POLICY_PUBLIC
+        """ Return log policy for *text* should be printed to the console. To be overridden by engine. """
+        return Common.LOG_POLICY_PUBLIC_STDOUT if not stderr else Common.LOG_POLICY_PUBLIC_STDERR
 
     def process_output(self, stdout, stderr):
         """
@@ -1182,24 +1201,50 @@ class Common(object):
             s = s.replace("${%s}" % key, value)
         return s
 
+    # Backend reporting
+
     def task_started(self, uri):
         """A task has been started within a bucket"""
         self.info("Task started: {}".format(uri))
         if self._current_task is not None and self._current_task != uri:
-            # Current task is done
             print("""{"taskstatus":true,"uri":"%s","status":"done"}""" % (self._current_task))
+        self._current_task = uri
+
+    def task_progress(self, uri, progress):
+        """Update the progress of an individual task"""
+        self.info("Task {} progress update: {}".format(uri, progress))
+        print("""{"taskprogress":true,"uri":"%s","progress":%d}""" % (uri, progress))
         self._current_task = uri
 
     def task_done(self, uri):
         """A task has been completed"""
         self.info("Task done: {}".format(uri))
         if self._current_task is None or self._current_task != uri:
-            # Current task is done
             print("""{"taskstatus":true,"uri":"%s","status":"done"}""" % (uri))
         self._current_task = uri
 
+    def task_preview_available(self, uri, path, subitem=None, size=None, description=None):
+        """A task can one ore more proxies/previews, register a preview at *path* with backend for task *uri* for optional *subitem*"""
+        if not subitem:
+            subitem = "main"
+        self.info("Reporting task preview available: {} (sub item: '{}')".format(uri, subitem if subitem is not None else ""))
+        print("""{"taskpreview":true,"uri":"%s","path":"%s","subitem":"%s","size":%s,"description":"%s"}""" % (
+            uri, path, subitem, size or -1,  description or ""))
+
+    def update_job_metrics(self, key, value):
+        """ Update job metrics with a key and value """
+        self.info("Updating job metrics: {} = {}".format(key, value))
+        value_fragment = str(value)
+        if isinstance(value, str):
+            value_fragment = f'"{value}"' # Quote
+        elif isinstance(value, bool):
+            value_fragment = "true" if value else "false"
+        elif isinstance(value, dict):
+            value_fragment = json.dumps(value, cls=JSONEncoder)
+        print("""{"computemetrics":true, "key":"%s","value":%s}""" % (key, value_fragment))
+
     @staticmethod
-    def scan_file_sequences(root_folder, younger_than=None):
+    def scan_file_sequences(root_folder, younger_than=None, include=None, includes=None, subdirs=True, exclude=None):
         """
         Scan a folder recursively for file sequences and return them grouped by pattern.
         
@@ -1211,7 +1256,7 @@ class Common(object):
                 [{"subdir":"layer1", "filename":"SC0120_CAM_0070.PathTraced", "frames":[1517,1518,..], "ext":"exr"}]
         """
         if not os.path.exists(root_folder):
-            Common.warning(f"Folder does not exist: {root_folder}")
+            Common.warning(f"(scan_file_sequences) Folder does not exist: {root_folder}")
             return []
         
         sequences = {}  # key: (subdir, filename, ext), value: set of frame numbers
@@ -1222,6 +1267,9 @@ class Common(object):
             subdir = os.path.relpath(root, root_folder)
             if subdir == ".":
                 subdir = ""
+                
+            if not subdirs and subdir:
+                continue
             
             for file in files:
                 # Make sure file is younger than the provided Datetime object
@@ -1230,6 +1278,15 @@ class Common(object):
                 
                 # Skip hidden files and files without extensions
                 if file.startswith('.'):
+                    continue
+                
+                if include is not None and include.lower() not in file.lower():
+                    continue
+
+                if includes is not None and not any(include.lower() in file.lower() for include in includes):
+                    continue
+                
+                if exclude is not None and exclude.lower() in file.lower():
                     continue
                 
                 # Split filename into parts
@@ -1305,8 +1362,15 @@ class Common(object):
             except Exception as e:
                 had_error = True
                 Common.warning(traceback.format_exc())
-                Common.warning(f"Error when running background worker: {e}")
-            time.sleep(interval * (10 if had_error else 0))
+                Common.log_stderr(f"Error when running background worker, cooling down: {e}")
+            time.sleep(interval * (10 if had_error else 1))
+        # Run one last time
+        try:
+            func()
+        except Exception as e:
+            had_error = True
+            Common.warning(traceback.format_exc())
+            Common.log_stderr(f"Error when running background worker final run: {e}")
         Common.info("Background worker thread finished")
 
     def execute(self):
@@ -1336,7 +1400,11 @@ class Common(object):
                 else:
                     exitcode = self._execute(self.item)
             finally:
-                self.post(exitcode)
+                try:
+                    self.post(exitcode)
+                except Exception as e:
+                    Common.warning(traceback.format_exc())
+                    Common.log_stderr(f"An error occurred when running post execution: {e}")
         finally:
             self.executing = False
             if self._background_worker_thread:
@@ -1473,7 +1541,15 @@ class Common(object):
             
             exitcode = -999999
 
+            log_function_loopup = {
+                Common.LOG_POLICY_MUTE: None,
+                Common.LOG_POLICY_PUBLIC_STDOUT: Common.log,
+                Common.LOG_POLICY_PUBLIC_STDERR: Common.log_stderr,
+                Common.LOG_POLICY_SERVICE_STDOUT: Common.info,
+                Common.LOG_POLICY_SERVICE_STDERR: Common.warning
+            }
             while not (stdout_ended and stderr_ended):
+                exitcode_preemptive = None
                 if first_run:
                     Common.info("Additional accsyn PID({0}) - main process".format(self.process.pid))
                     if stdin:
@@ -1487,20 +1563,17 @@ class Common(object):
                         line = stdout_queue.get(timeout=0.1)
                         if line is None:
                             stdout_ended = True
-                        else:
+                        elif 0<len(line):
                             stdout = Common.safely_printable(line)
-
                             policy = self.log_policy(stdout, False)
-                            if policy != Common.LOG_POLICY_MUTE:
-                                if policy == Common.LOG_POLICY_PUBLIC:
-                                    Common.log(stdout, end="", aggregated_flush=True)
-                                else:
-                                    Common.info(stdout, end="", aggregated_flush=True)
+                            fn = log_function_loopup.get(policy, log_function_loopup[Common.LOG_POLICY_PUBLIC_STDOUT])
+                            if fn:
+                                fn(stdout, append_prefix=False, end="", aggregated_flush=True, accsyn=False)
         
                             process_result = self.process_output(stdout, "")
                             if process_result is not None:
-                                Common.warning("Pre-emptive terminating process (pid: {0}).".format(self.process.pid))
-                                exitcode = process_result
+                                Common.warning("Got pre-emptive exitcode from engine stdout processing: {0}".format(process_result))
+                                exitcode_preemptive = process_result
                                 break
                 except queue.Empty:
                     pass
@@ -1513,26 +1586,32 @@ class Common(object):
                         line = stderr_queue.get(timeout=0.1)
                         if line is None:
                             stderr_ended = True
-                        else:
+                        elif 0<len(line):
                             stderr = Common.safely_printable(line)
                             policy = self.log_policy(stderr, True)
-                            if policy != Common.LOG_POLICY_MUTE:
-                                if policy == Common.LOG_POLICY_PUBLIC:
-                                    Common.log_stderr(stderr, end="", aggregated_flush=True)
-                                else:
-                                    Common.warning(stderr, append_prefix=False, end="", aggregated_flush=True)
+                            fn = log_function_loopup.get(policy, log_function_loopup[Common.LOG_POLICY_PUBLIC_STDERR])
+                            if fn:
+                                fn(stderr, append_prefix=False, end="", aggregated_flush=True, accsyn=False)
         
                             # Also pass stderr to process_output for compatibility
                             process_result = self.process_output("", stderr)
                             if process_result is not None:
-                                Common.warning("Pre-emptive terminating process (pid: {0}).".format(self.process.pid))
-                                exitcode = process_result
+                                Common.warning("Got pre-emptive exitcode from engine stderr processing: {0}".format(process_result))
+                                exitcode_preemptive = process_result
                                 break
+
                 except queue.Empty:
                     pass
                 except:
                     Common.warning(traceback.format_exc())
-                
+
+                if exitcode_preemptive is not None:
+                    # Kill process
+                    Common.warning("Pre-emptive terminating process (pid: {0}).".format(self.process.pid))
+                    self.process.terminate()
+                    exitcode = exitcode_preemptive
+                    break
+
                 # Check if process has ended
                 exitcode = self.process.poll()
                 if exitcode is not None and stdout_ended and stderr_ended:

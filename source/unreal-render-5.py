@@ -396,7 +396,7 @@ class Engine(Common):
     def log_policy(self, text, stderr=False):
         if 0<text.find('(NOTE: "Disallow Nanite" on static mesh components can be used to suppress this warning and forcibly render the object as non-Nanite.)'):
             return Common.LOG_POLICY_MUTE
-        return Common.LOG_POLICY_PUBLIC if stderr else Common.LOG_POLICY_SERVICE # Log errors to public log, rest to service log
+        return Common.LOG_POLICY_PUBLIC_STDERR if stderr else Common.LOG_POLICY_SERVICE_STDERR # Log errors to public log, rest to service log
 
     def get_commandline(self, item):
         """Run the render using Unreal CLI"""
